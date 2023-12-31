@@ -3,98 +3,220 @@ import { useEffect, useState } from "react";
 import { ethers } from "ethers";
 import type { NextPage } from "next";
 import { useAccount } from "wagmi";
-import { usePublicClient } from "wagmi";
-import { getContract } from "wagmi/actions";
+// import { usePublicClient } from "wagmi";
+// import { getContract } from "wagmi/actions";
 // import { BugAntIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline";
 import { MetaHeader } from "~~/components/MetaHeader";
+import { Spinner } from "~~/components/assets/Spinner";
 import { useScaffoldConfig } from "~~/context/ScaffoldConfigContext";
+// import AES from "~~/utils/aes";
 import { useEthersProvider } from "~~/utils/ethers";
 
 
 const Home: NextPage = () => {
   const { address } = useAccount();
-  const provider = useEthersProvider();
-  const publicClient = usePublicClient();
   const config = useScaffoldConfig();
+  const infuraKey = process.env.NEXT_PUBLIC_INFURA_API_KEY;
+  const provider = useEthersProvider();
+  const mainnetProvider = ethers.getDefaultProvider(`https://mainnet.infura.io/v3/${infuraKey}`);
+  const polygonProvider = ethers.getDefaultProvider(`https://polygon-mainnet.infura.io/v3/${infuraKey}`);
+
   const [sporkBalance, setSporkBalance] = useState(0);
   const [sSporkBalance, setSSporkBalance] = useState(0);
   const [bbbBalance, setBbbBalance] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
+  const [email, setEmail] = useState("");
+  const [isMember, setIsMember] = useState("");
+  const [isChecked, setIsChecked] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+  // const inputError = "border-red-500 focus:border-blue-400";
+  const inputError = "border-red-500";
+
   useEffect(() => {
     // Fetch vote token balance when wallet address changes
     const fetchBalance = async () => {
       try {
         if (!address) return 0;
+        setIsLoading(true);
         // contract ABI
         const ABI = [
-          // Read-Only Functions
           "function balanceOf(address owner) view returns (uint256)",
           "function decimals() view returns (uint8)",
           "function symbol() view returns (string)",
-
-          // Authenticated Functions
-          "function transfer(address to, uint amount) returns (bool)",
-
-          // Events
-          "event Transfer(address indexed from, address indexed to, uint amount)",
         ];
         // Token addresses
         const SPORKTokenMATIC = "0x9CA6a77C8B38159fd2dA9Bd25bc3E259C33F5E39";
         const SPORKTokenMainnet = "0xb624fde1a972b1c89ec1dad691442d5e8e891469";
         const sSPORKToken = "0x058d96BAa6f9D16853970b333ed993aCC0c35aDd";
-        const BBBToken = "0x4200000000000000000000000000000000000042";
-        // create token contract intance
-        const diamondCut = getContract({
-          address: sSPORKToken,
-          abi: ["function balanceOf(address account) view returns (uint256)"],
-          walletClient: publicClient,
-        });
+        const BBBToken = "0x1e988ba4692e52bc50b375bcc8585b95c48aad77";
+        // Tokens contract instance
         const SPORKTokenContract = new ethers.Contract(
-          // config.configuredNetwork.id === 1 ? SPORKTokenMainnet : SPORKTokenMATIC, 
-          SPORKTokenMATIC,
+          config.configuredNetwork.id === 1 ? SPORKTokenMainnet : SPORKTokenMATIC,
           ABI,
           provider,
         );
-        const sSPORKTokenContract = new ethers.Contract(sSPORKToken, ABI, provider);
-        const BBBTokenContract = new ethers.Contract(BBBToken, ABI, provider);
-        console.log("contract:", diamondCut);
-        // const x = await diamondCut.read.balanceOf(address);
+        const sSPORKTokenContract = new ethers.Contract(sSPORKToken, ABI, polygonProvider);
+        const BBBTokenContract = new ethers.Contract(BBBToken, ABI, mainnetProvider);
 
         // Fetch balances for the connected wallet address
         const SPORKBalance = await SPORKTokenContract.balanceOf(address);
-        const SPORK = await SPORKTokenContract.symbol();
-        console.log("contractXX:", Number(ethers.formatEther(SPORKBalance)));
-        console.log("contXX:", SPORK);
-        
-        // const sSPORKBalance = await sSPORKTokenContract.balanceOf(address);
-        // const BBBBalance = await BBBTokenContract.balanceOf(address);
-        // setSporkBalance(Number(ethers.formatEther(SPORKBalance)));
-        // setSSporkBalance(Number(ethers.formatEther(sSPORKBalance)));
-        // setBbbBalance(Number(ethers.formatEther(BBBBalance)));
+        const sSPORKBalance = await sSPORKTokenContract.balanceOf(address);
+        const BBBBalance = await BBBTokenContract.balanceOf(address);
+        // format balances and set state variables
+        setSporkBalance(Number(ethers.formatEther(SPORKBalance)));
+        setSSporkBalance(Number(ethers.formatEther(sSPORKBalance)));
+        setBbbBalance(Number(ethers.formatEther(BBBBalance)));
+        setIsLoading(false);
       } catch (e) {
-        console.log("ERR_FETCHING_VOTING_BALANCE:", e);
+        console.log("ERR_FETCHING_BALANCE:", e);
       }
     };
     fetchBalance();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [address, provider, config]);
+
+  const data = {
+    input: {
+      bbbBalance,
+      email,
+      ethAddress: address,
+      sSporkBalance,
+      sporkBalance,
+      sporkdaoMember: isMember,
+    },
+  };
+  const submitApplication = () => {
+    const _isMember = validateIsMember(isMember);
+    if (!_isMember) {
+      return;
+    } else {
+      setIsSubmitting(true);
+      setTimeout(() => {
+        encryptData();
+        setIsSubmitting(false);
+      }, 2000);
+    }
+  };
+  const removeInputErrorClass = () => {
+    const selectElement = document.getElementById("isMember");
+    selectElement?.classList.remove(inputError);
+  };
+  const addInputErroClass = () => {
+    const selectElement = document.getElementById("isMember");
+    selectElement?.classList.add(inputError);
+    selectElement?.focus();
+  };
+  const validateIsMember = (isMember: string) => {
+    if (!isMember) {
+      addInputErroClass();
+      return;
+    }
+    removeInputErrorClass();
+    return isMember;
+  };
+  const encryptData = async () => {
+    try {
+      const apiResponse = await fetch("/api/apply", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(data),
+      });
+      const crypted = await apiResponse.json();
+      console.log("RES:: ", crypted);
+      return crypted;
+    } catch (e) {
+      console.log("ERR_POSTING_DATA");
+    }
+  };
 
   return (
     <>
       <MetaHeader />
       <div className="flex items-center flex-col flex-grow pt-10">
-        <div className="px-5">
-          <h1 className="text-center mb-8">
+        <div className="px-5 text-center flex flex-col justify-center max-w-md">
+          <h1 className="mb-8">
             <span className="block text-2xl mb-2">Welcome to</span>
             <span className="block text-4xl font-bold">ETH Denver 2024</span>
           </h1>
-          <div className="balances flex">
-            <div className="flex">
-              <span>SPORK</span> {sporkBalance}
+          {isLoading ? (
+            <div className="w-full flex justify-center">
+              <Spinner />
             </div>
-            <div className="flex">
-              <span>sSPORK</span> {sSporkBalance}
+          ) : (
+            <div className="balances flex justify-between w-full mt-3 mb-8">
+              <div className="flex-col ">
+                <div>$SPORK</div>
+                <div>{sporkBalance}</div>
+              </div>
+              <div className="flex-col">
+                <div>sSPORK</div> <div>{sSporkBalance}</div>
+              </div>
+              <div className="flex-col">
+                <div>BBB</div> <div>{bbbBalance}</div>
+              </div>
             </div>
-            <div className="flex">
-              <span>BBB</span> {bbbBalance}
+          )}
+          <div className="membership">
+            <h2 className="text-lg font-medium my-5">SporkDAO</h2>
+            <p className="my-8">
+              SporkDAO represents the final leg of the journey towards transitioning ETHDenver to a community owned
+              ecosystem.
+            </p>
+            <label className="cursor-pointer label flex flex-col">
+              <span className="label-text mb-4 w-full text-left">Joined SporkDAO?</span>
+              <select
+                value={isMember}
+                onChange={e => {
+                  const val = e.target.value;
+                  setIsMember(val);
+                  removeInputErrorClass();
+                }}
+                className="select select-bordered w-full focus:outline-none"
+                id="isMember"
+              >
+                <option value="">...</option>
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+                <option value="will_join">Will join</option>
+              </select>
+            </label>
+            {isMember && isMember === "no" && (
+              <div className="form-control mt-5">
+                <label className="cursor-pointer label px-10 mx-2">
+                  <span className="label-text">Join SporkDAO</span>
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => setIsChecked(!isChecked)}
+                    className="checkbox checkbox-success"
+                  />
+                </label>
+              </div>
+            )}
+          </div>
+          <div className="email">
+            <h2 className="text-lg font-medium pt-8 mt-8 mb-8">Stay Updated</h2>
+            <p className="my-8">Submit your application to secure your role in ETHDenver history</p>
+
+            <div className="form-control mt-2 mb-8">
+              <input
+                type="email"
+                placeholder="email"
+                value={email}
+                onChange={e => {
+                  const val = e.target.value;
+                  setEmail(val);
+                }}
+                className="input input-bordered input-md w-full"
+              />
+              <button onClick={submitApplication} className={`btn mt-5 btn-primary`} disabled={!email || !isValidEmail}>
+                {isSubmitting && <span className="loading loading-spinner"></span>}
+                Submit Application
+              </button>
             </div>
           </div>
         </div>
