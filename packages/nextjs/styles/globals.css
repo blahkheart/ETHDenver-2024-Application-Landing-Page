@@ -34,3 +34,8 @@ p {
 .select-network-text {
   font-size: 11px;
 }
+
+.balances {
+      border: 2px solid #d4cbcb;
+      padding: 40px 30px;
+    }
